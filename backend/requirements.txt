@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+websockets
+transformers
+torch
+sentence-transformers
+faiss-cpu
+httpx
+python-dotenv
+langdetect
+spacy
+pydantic
+motor
+pydantic-settings

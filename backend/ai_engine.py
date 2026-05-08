@@ -7,7 +7,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ── Optional heavy imports (graceful fallback) ────────────────────────────────
 try:
     import faiss
 except ImportError:
@@ -17,23 +16,24 @@ except ImportError:
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
-    SentenceTransformer = None  # type: ignore
+    SentenceTransformer = None  
     logger.warning("sentence-transformers not installed — similarity search disabled.")
 
 try:
     from transformers import pipeline as hf_pipeline
 except ImportError:
-    hf_pipeline = None  # type: ignore
+    hf_pipeline = None  
     logger.warning("transformers not installed — using dummy classifier.")
+
 
 try:
     import spacy
 except ImportError:
-    spacy = None  # type: ignore
+    spacy = None  
     logger.warning("spacy not installed — NLP preprocessing limited.")
 
 
-# ── Preprocessor ──────────────────────────────────────────────────────────────
+#preprocessor (nlp)
 class Preprocessor:
     """Cleans incoming text for the AI pipeline."""
 
@@ -52,7 +52,6 @@ class Preprocessor:
         return text.strip()
 
 
-# ── AI Engine ─────────────────────────────────────────────────────────────────
 class AIEngine:
     """Hybrid misinformation detection engine."""
 

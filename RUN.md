@@ -4,9 +4,9 @@ Follow these steps to get the real-time misinformation detection system running 
 
 ## 🚀 Prerequisites
 
-*   Python 3.9+
-*   Node.js 18+
-*   NPM/PNPM
+*   **Python 3.10+** (optimized for AI workloads)
+*   **Node.js 20+**
+*   **NPM / PNPM**
 
 ---
 
@@ -17,10 +17,11 @@ Follow these steps to get the real-time misinformation detection system running 
     cd backend
     ```
 
-2.  **Create a virtual environment (recommended):**
+2.  **Create a virtual environment:**
     ```bash
     python -m venv venv
-    .\venv\Scripts\activate
+    .\venv\Scripts\activate  # Windows
+    source venv/bin/activate # Unix/macOS
     ```
 
 3.  **Install dependencies:**
@@ -29,7 +30,7 @@ Follow these steps to get the real-time misinformation detection system running 
     ```
 
 4.  **Configure API Keys:**
-    Update the `.env` file with your `NEWS_API_KEY`. If left as `your_dummy_key`, the system will use simulated data.
+    Update the `.env` file with your `NEWS_API_KEY`. If left as `your_dummy_key`, the system will use simulated data for testing.
 
 5.  **Run the FastAPI server:**
     ```bash
@@ -61,7 +62,8 @@ Follow these steps to get the real-time misinformation detection system running 
 
 ## 🔍 How it Works
 
-*   **Data Ingestion**: Fetches live news from NewsAPI (or mocks it).
-*   **AI Engine**: Uses RoBERTa for claim classification and Sentence-Transformers for semantic fact retrieval.
-*   **Real-time**: WebSockets push new analysis directly to the dashboard every few seconds.
-*   **UI**: Built with Next.js, Tailwind CSS, and Framer Motion for a premium, interactive experience.
+*   **Premium Skeuomorphic UI**: Features a 4K-quality tactile design with realistic 3D shadows, metallic accents, and embossed/engraved typography for a high-end dashboard experience.
+*   **Data Ingestion**: Fetches live news from NewsAPI (or mocks it for local development).
+*   **AI Engine**: Hybrid pipeline using RoBERTa for claim classification and Sentence-Transformers for semantic fact retrieval.
+*   **Real-time Analysis**: WebSockets push analysis results directly to the dashboard every few seconds.
+*   **Tech Stack**: Built with **Next.js 15+**, **Tailwind CSS 4.0**, and **Framer Motion** for smooth, physically-accurate animations.

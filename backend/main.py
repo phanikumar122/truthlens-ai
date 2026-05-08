@@ -8,12 +8,9 @@ from config import settings
 from ai_engine import AIEngine
 from ingestion import DataIngestor
 from database import db
-
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize engines
 ai_engine = AIEngine()
 ingestor = DataIngestor()
 

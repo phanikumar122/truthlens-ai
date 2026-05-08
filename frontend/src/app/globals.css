@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0D0F12;
+  --color-surface: #1A1D23;
+  --color-card: #23272E;
+  --color-elevated: #2C323A;
+  
+  --color-border: rgba(255, 255, 255, 0.05);
+  --color-border-bright: rgba(255, 255, 255, 0.12);
+  
+  --color-primary: #6366F1;
+  --color-secondary: #06B6D4;
+  
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  
+  --color-foreground: #E2E8F0;
+  --color-muted: #94A3B8;
+}
+
+:root {
+  --background: #0D0F12;
+  --foreground: #E2E8F0;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'Inter', sans-serif;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 70%),
+    radial-gradient(circle at 100% 100%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* ── Skeuomorphic System ─────────────────────────────────────────────────── */
+
+.skeuo-card {
+  background: linear-gradient(145deg, #23272E, #1A1D23);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 
+    12px 12px 24px #080a0c,
+    -4px -4px 16px rgba(255, 255, 255, 0.02),
+    inset 1px 1px 1px rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.skeuo-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    16px 16px 32px #06080a,
+    -4px -4px 20px rgba(255, 255, 255, 0.03),
+    inset 1px 1px 2px rgba(255, 255, 255, 0.1);
+}
+
+.skeuo-inset {
+  background: #0A0C0E;
+  box-shadow: 
+    inset 4px 4px 8px #040506,
+    inset -1px -1px 2px rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+}
+
+.skeuo-button {
+  background: linear-gradient(145deg, #2C323A, #23272E);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 
+    4px 4px 8px #080a0c,
+    -2px -2px 8px rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.skeuo-button:active {
+  background: #1A1D23;
+  box-shadow: 
+    inset 2px 2px 4px #080a0c,
+    inset -1px -1px 2px rgba(255, 255, 255, 0.02);
+  transform: scale(0.98);
+}
+
+.skeuo-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.skeuo-bezel {
+  border: 2px solid #333B45;
+  border-top-color: #4A5565;
+  border-left-color: #4A5565;
+  border-bottom-color: #1E2329;
+  border-right-color: #1E2329;
+  border-radius: 12px;
+}
+
+/* ── Progress Bar ───────────────────────────────────────────────────────── */
+.skeuo-progress-track {
+  background: #0A0C0E;
+  height: 12px;
+  border-radius: 999px;
+  box-shadow: inset 2px 2px 4px rgba(0,0,0,0.5);
+  padding: 2px;
+}
+
+.skeuo-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+.text-embossed {
+  color: #E2E8F0;
+  text-shadow: 1px 1px 0px rgba(0,0,0,0.5), -1px -1px 0px rgba(255,255,255,0.05);
+}
+
+.text-engraved {
+  color: #94A3B8;
+  text-shadow: -1px -1px 0px rgba(0,0,0,0.8), 1px 1px 0px rgba(255,255,255,0.05);
+}
+
+/* ── Custom Scrollbar ───────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0C0E;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #333B45, #1E2329);
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.05);
+}

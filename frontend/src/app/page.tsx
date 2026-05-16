@@ -104,7 +104,7 @@ export default function TruthLensDashboard() {
   /* Safety Polling (Backup if WS fails) */
   useEffect(() => {
     const fetchResults = () => {
-      fetch(`${API_BASE}/results`)
+      fetch(`/api/results`)
         .then(res => res.json())
         .then((data: Result[]) => {
           if (data && Array.isArray(data)) {

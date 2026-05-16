@@ -101,6 +101,30 @@ export default function TruthLensDashboard() {
     return () => clearInterval(timer);
   }, []);
 
+  /* Safety Polling (Backup if WS fails) */
+  useEffect(() => {
+    const fetchResults = () => {
+      fetch(`${API_BASE}/results`)
+        .then(res => res.json())
+        .then((data: Result[]) => {
+          if (data && Array.isArray(data)) {
+            setResults(prev => {
+              // Only add items we don't already have
+              const existingTexts = new Set(prev.map(p => p.text));
+              const newItems = data.filter(d => !existingTexts.has(d.text));
+              if (newItems.length === 0) return prev;
+              return [...newItems, ...prev].slice(0, 50);
+            });
+            if (data.length > 0 && !selectedResult) setSelectedResult(data[0]);
+          }
+        })
+        .catch(() => {});
+    };
+
+    const interval = setInterval(fetchResults, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [selectedResult]);
+
 
 
   /* WebSocket with auto-reconnect */

@@ -16,7 +16,7 @@ interface Result {
 }
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = "https://cybersoul18-truthlens-backend.hf.space";
 const WS_URL = API_BASE.replace(/^http/, "ws") + "/ws";
 
 const CATEGORIES: Record<string, string[]> = {

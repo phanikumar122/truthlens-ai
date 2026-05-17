@@ -229,28 +229,38 @@ export default function TruthLensDashboard() {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px]" />
       </div>
 
-      <div className="w-full max-w-[1500px] px-4 md:px-8 py-8 relative z-10 flex flex-col h-screen">
+      <div className="w-full max-w-[1500px] px-4 md:px-8 py-4 md:py-8 relative z-10 flex flex-col min-h-screen lg:h-screen">
         
         {/* ── Navbar ─────────────────────────────────────────────────────────── */}
         <motion.nav 
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-          className="flex flex-wrap justify-between items-center mb-8 skeuo-card rounded-2xl px-6 py-4 w-full sticky top-4 z-50 transition-all border-t-white/10"
+          className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 md:mb-8 skeuo-card rounded-2xl px-4 md:px-6 py-4 w-full sticky top-4 z-50 transition-all border-t-white/10 gap-4"
         >
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
-              <ShieldCheck className="w-5 h-5 text-white" strokeWidth={2.5} />
+          <div className="flex justify-between items-center w-full lg:w-auto">
+            <div className="flex items-center gap-3 md:gap-4">
+              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+                <ShieldCheck className="w-4 h-4 md:w-5 md:h-5 text-white" strokeWidth={2.5} />
+              </div>
+              <div>
+                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
+                  TruthLens <span className="text-gradient-primary">AI</span>
+                </h1>
+                <p className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase tracking-widest">Global Intelligence</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-                TruthLens <span className="text-gradient-primary">AI</span>
-              </h1>
-              <p className="text-[10px] text-gray-400 font-medium uppercase tracking-widest">Global Intelligence</p>
-            </div>
+            
+            <button 
+              onClick={() => setIsCmdOpen(true)}
+              className="lg:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all text-sm text-gray-400 group focus:outline-none skeuo-button"
+            >
+              <Command className="w-4 h-4 text-indigo-400" />
+              <span className="text-[10px] uppercase font-bold text-engraved">Menu</span>
+            </button>
           </div>
 
-          <div className="flex items-center gap-6 mt-4 md:mt-0">
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 md:gap-6 w-full lg:w-auto">
             
             <button 
               onClick={() => setIsCmdOpen(true)}
@@ -266,7 +276,8 @@ export default function TruthLensDashboard() {
 
             <div className="h-8 w-px bg-white/10 hidden lg:block" />
 
-            <div className="hidden lg:flex p-1 skeuo-inset border border-white/5 rounded-xl relative">
+            <div className="flex overflow-x-auto scrollbar-hide w-full lg:w-auto pb-1 lg:pb-0">
+              <div className="flex p-1 skeuo-inset border border-white/5 rounded-xl relative min-w-max">
               {["Feed", "Economy", "Tech", "Health", "Geopolitics"].map((tag) => {
                 const isFeed = tag === "Feed";
                 const isActive = isFeed ? activeTag === null : activeTag === tag;
@@ -287,18 +298,18 @@ export default function TruthLensDashboard() {
 
             <div className="h-8 w-px bg-white/10 hidden md:block" />
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between w-full lg:w-auto gap-3 border-t border-white/5 lg:border-none pt-3 lg:pt-0">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg skeuo-inset border ${isLive ? 'border-green-500/20' : 'border-red-500/20'}`}>
                 <div className={`skeuo-led ${isLive ? 'bg-green-500 text-green-500 animate-[pulse_1s_ease-in-out_infinite]' : 'bg-red-500 text-red-500'}`} />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${isLive ? 'text-green-400' : 'text-red-400'}`}>{status}</span>
+                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-wider ${isLive ? 'text-green-400' : 'text-red-400'}`}>{status}</span>
               </div>
 
               <button 
                 onClick={handleExport}
                 disabled={results.length === 0}
-                className="px-4 py-2 skeuo-button hover:bg-[#1F2937] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all focus:outline-none group"
+                className="px-3 md:px-4 py-1.5 md:py-2 skeuo-button hover:bg-[#1F2937] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-[9px] md:text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all focus:outline-none group"
               >
-                <Download className="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                <Download className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 group-hover:text-white transition-colors" />
                 <span className="text-gray-200 group-hover:text-white transition-colors">Export</span>
               </button>
             </div>
@@ -309,7 +320,7 @@ export default function TruthLensDashboard() {
         <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 min-h-0">
           
           {/* Left Column — Live Feed */}
-          <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-5 min-h-0">
+          <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-5 min-h-[400px] lg:min-h-0">
             <div className="flex justify-between items-end px-2">
               <h2 className="text-sm font-bold text-gray-300 tracking-wide uppercase flex items-center gap-2">
                 <Activity className="w-4 h-4 text-indigo-400" /> Live Stream
@@ -319,7 +330,7 @@ export default function TruthLensDashboard() {
               </span>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 pr-3 scrollbar-thin pb-4">
+            <div className="flex-1 overflow-y-auto max-h-[45vh] lg:max-h-none space-y-4 pr-3 scrollbar-thin pb-4">
               <AnimatePresence mode="popLayout">
                 {results.length === 0 ? (
                   Array.from({ length: 5 }).map((_, i) => (
@@ -417,19 +428,19 @@ export default function TruthLensDashboard() {
 
                 <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4 relative z-10">
                   <div>
-                    <h2 className="text-3xl font-black text-white tracking-tight mb-3 flex items-center gap-3">
+                    <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-3 flex items-center gap-3">
                       {selectedResult.source}
-                      {selectedResult.label === "HIGH RISK" && <ShieldAlert className="w-7 h-7 text-red-500" />}
-                      {selectedResult.label === "MODERATE" && <AlertTriangle className="w-7 h-7 text-amber-500" />}
-                      {selectedResult.label === "LOW RISK" && <CheckCircle2 className="w-7 h-7 text-green-500" />}
+                      {selectedResult.label === "HIGH RISK" && <ShieldAlert className="w-6 h-6 md:w-7 md:h-7 text-red-500" />}
+                      {selectedResult.label === "MODERATE" && <AlertTriangle className="w-6 h-6 md:w-7 md:h-7 text-amber-500" />}
+                      {selectedResult.label === "LOW RISK" && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 text-green-500" />}
                     </h2>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <span className="px-3 py-1 skeuo-inset text-[9px] font-black text-gray-400 uppercase tracking-widest border border-white/5">ML-Verified</span>
                       <span className="px-3 py-1 skeuo-inset text-[9px] font-black text-gray-400 uppercase tracking-widest border border-white/5">Correlated</span>
                     </div>
                   </div>
-                  <div className="text-right skeuo-card px-6 py-3 rounded-2xl shadow-inner border-t-white/10">
-                    <div className="text-3xl font-black text-gradient-primary font-mono tracking-tighter text-embossed">
+                  <div className="text-left md:text-right w-full md:w-auto skeuo-card px-6 py-3 rounded-2xl shadow-inner border-t-white/10 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center">
+                    <div className="text-2xl md:text-3xl font-black text-gradient-primary font-mono tracking-tighter text-embossed">
                       {selectedResult.virality_score}
                     </div>
                     <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1 text-engraved">

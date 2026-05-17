@@ -239,15 +239,15 @@ export default function TruthLensDashboard() {
           className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 md:mb-8 skeuo-card rounded-2xl px-4 md:px-6 py-4 w-full sticky top-4 z-50 transition-all border-t-white/10 gap-4"
         >
           <div className="flex justify-between items-center w-full lg:w-auto">
-            <div className="flex items-center gap-3 md:gap-4">
-              <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-gradient-primary flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+            <div className="flex items-center gap-3 md:gap-4 min-w-0">
+              <div className="w-8 h-8 md:w-10 md:h-10 shrink-0 rounded-xl bg-gradient-primary flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
                 <ShieldCheck className="w-4 h-4 md:w-5 md:h-5 text-white" strokeWidth={2.5} />
               </div>
-              <div>
-                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
+              <div className="min-w-0">
+                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-1.5 truncate">
                   TruthLens <span className="text-gradient-primary">AI</span>
                 </h1>
-                <p className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase tracking-widest">Global Intelligence</p>
+                <p className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase tracking-widest truncate">Global Intelligence</p>
               </div>
             </div>
             
@@ -260,11 +260,11 @@ export default function TruthLensDashboard() {
             </button>
           </div>
 
-          <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 md:gap-6 w-full lg:w-auto">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 md:gap-6 w-full lg:w-auto min-w-0">
             
             <button 
               onClick={() => setIsCmdOpen(true)}
-              className="hidden lg:flex items-center gap-2 px-3 py-1.5 skuo-button rounded-xl transition-all text-sm text-gray-400 group focus:outline-none skeuo-button"
+              className="hidden lg:flex shrink-0 items-center gap-2 px-3 py-1.5 skuo-button rounded-xl transition-all text-sm text-gray-400 group focus:outline-none skeuo-button"
             >
               <Command className="w-4 h-4 group-hover:text-indigo-400 transition-colors" />
               <span className="text-engraved">Menu</span>
@@ -274,43 +274,44 @@ export default function TruthLensDashboard() {
               </div>
             </button>
 
-            <div className="h-8 w-px bg-white/10 hidden lg:block" />
+            <div className="h-8 w-px bg-white/10 hidden lg:block shrink-0" />
 
             <div className="flex overflow-x-auto scrollbar-hide w-full lg:w-auto pb-1 lg:pb-0">
-              <div className="flex p-1 skeuo-inset border border-white/5 rounded-xl relative min-w-max">
-              {["Feed", "Economy", "Tech", "Health", "Geopolitics"].map((tag) => {
-                const isFeed = tag === "Feed";
-                const isActive = isFeed ? activeTag === null : activeTag === tag;
-                
-                return (
-                  <button
-                    key={tag}
-                    onClick={() => setActiveTag(isFeed ? null : tag)}
-                    className={`relative text-sm font-medium transition-all cursor-pointer px-4 py-1.5 rounded-lg z-10 outline-none focus:outline-none ${
-                      isActive ? "text-white skeuo-button scale-105" : "text-gray-400 hover:text-gray-200"
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                )
-              })}
+              <div className="flex p-1 skeuo-inset border border-white/5 rounded-xl relative w-max">
+                {["Feed", "Economy", "Tech", "Health", "Geopolitics"].map((tag) => {
+                  const isFeed = tag === "Feed";
+                  const isActive = isFeed ? activeTag === null : activeTag === tag;
+                  
+                  return (
+                    <button
+                      key={tag}
+                      onClick={() => setActiveTag(isFeed ? null : tag)}
+                      className={`relative text-xs md:text-sm font-medium transition-all cursor-pointer px-3 md:px-4 py-1.5 rounded-lg z-10 outline-none focus:outline-none shrink-0 ${
+                        isActive ? "text-white skeuo-button scale-105" : "text-gray-400 hover:text-gray-200"
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
-            <div className="h-8 w-px bg-white/10 hidden md:block" />
+            <div className="h-8 w-px bg-white/10 hidden md:block shrink-0" />
 
-            <div className="flex items-center justify-between w-full lg:w-auto gap-3 border-t border-white/5 lg:border-none pt-3 lg:pt-0">
+            <div className="flex items-center justify-between w-full lg:w-auto gap-3 pt-1 lg:pt-0 shrink-0">
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg skeuo-inset border ${isLive ? 'border-green-500/20' : 'border-red-500/20'}`}>
-                <div className={`skeuo-led ${isLive ? 'bg-green-500 text-green-500 animate-[pulse_1s_ease-in-out_infinite]' : 'bg-red-500 text-red-500'}`} />
-                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-wider ${isLive ? 'text-green-400' : 'text-red-400'}`}>{status}</span>
+                <div className={`skeuo-led shrink-0 ${isLive ? 'bg-green-500 text-green-500 animate-[pulse_1s_ease-in-out_infinite]' : 'bg-red-500 text-red-500'}`} />
+                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${isLive ? 'text-green-400' : 'text-red-400'}`}>{status}</span>
               </div>
 
               <button 
                 onClick={handleExport}
                 disabled={results.length === 0}
-                className="px-3 md:px-4 py-1.5 md:py-2 skeuo-button hover:bg-[#1F2937] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-[9px] md:text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all focus:outline-none group"
+                className="px-3 md:px-4 py-1.5 md:py-2 skeuo-button hover:bg-[#1F2937] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-[9px] md:text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all focus:outline-none group shrink-0"
               >
-                <Download className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 group-hover:text-white transition-colors" />
-                <span className="text-gray-200 group-hover:text-white transition-colors">Export</span>
+                <Download className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 group-hover:text-white transition-colors shrink-0" />
+                <span className="text-gray-200 group-hover:text-white transition-colors whitespace-nowrap">Export</span>
               </button>
             </div>
           </div>
@@ -320,7 +321,7 @@ export default function TruthLensDashboard() {
         <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 min-h-0">
           
           {/* Left Column — Live Feed */}
-          <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-5 min-h-[400px] lg:min-h-0">
+          <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-5 min-h-[400px] lg:min-h-0 min-w-0">
             <div className="flex justify-between items-end px-2">
               <h2 className="text-sm font-bold text-gray-300 tracking-wide uppercase flex items-center gap-2">
                 <Activity className="w-4 h-4 text-indigo-400" /> Live Stream
@@ -378,10 +379,10 @@ export default function TruthLensDashboard() {
                             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 shadow-[0_0_15px_#6366F1]" />
                           )}
                           <div className="flex justify-between items-start mb-4">
-                            <span className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-1.5 tracking-widest text-engraved">
-                              <Database className="w-3 h-3" /> {res.source}
+                            <span className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-1.5 tracking-widest text-engraved truncate">
+                              <Database className="w-3 h-3 shrink-0" /> <span className="truncate">{res.source}</span>
                             </span>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-tighter border shadow-sm ${bgClass} ${textClass}`}>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-tighter border shadow-sm shrink-0 ml-2 ${bgClass} ${textClass}`}>
                               {res.label}
                             </span>
                           </div>
@@ -428,11 +429,11 @@ export default function TruthLensDashboard() {
 
                 <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4 relative z-10">
                   <div>
-                    <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight mb-3 flex items-center gap-3">
-                      {selectedResult.source}
-                      {selectedResult.label === "HIGH RISK" && <ShieldAlert className="w-6 h-6 md:w-7 md:h-7 text-red-500" />}
-                      {selectedResult.label === "MODERATE" && <AlertTriangle className="w-6 h-6 md:w-7 md:h-7 text-amber-500" />}
-                      {selectedResult.label === "LOW RISK" && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 text-green-500" />}
+                    <h2 className="text-xl md:text-3xl font-black text-white tracking-tight mb-3 flex flex-wrap items-center gap-2 md:gap-3">
+                      <span className="truncate max-w-full">{selectedResult.source}</span>
+                      {selectedResult.label === "HIGH RISK" && <ShieldAlert className="w-6 h-6 md:w-7 md:h-7 text-red-500 shrink-0" />}
+                      {selectedResult.label === "MODERATE" && <AlertTriangle className="w-6 h-6 md:w-7 md:h-7 text-amber-500 shrink-0" />}
+                      {selectedResult.label === "LOW RISK" && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 text-green-500 shrink-0" />}
                     </h2>
                     <div className="flex flex-wrap gap-2">
                       <span className="px-3 py-1 skeuo-inset text-[9px] font-black text-gray-400 uppercase tracking-widest border border-white/5">ML-Verified</span>

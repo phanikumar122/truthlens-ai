@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -8,17 +8,23 @@ const inter = Inter({
   display: "swap",
 });
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "TruthLens AI — Premium Global Intelligence",
+  title: "TruthLens — verification desk",
   description:
-    "AI-powered misinformation detection dashboard using NLP classification, semantic fact retrieval, and source credibility analysis.",
+    "AI-powered misinformation verification. Live classification, source attribution, and confidence scoring for claims moving across the wire.",
 };
+
+/**
+ * Applies the saved theme before paint, so there's no flash of the wrong theme.
+ * Reads localStorage 'tl-theme'; falls back to system preference; default dark.
+ */
+const noFlash = `(function(){try{var t=localStorage.getItem('tl-theme');if(!t){t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 
 export default function RootLayout({
   children,
@@ -28,9 +34,13 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${outfit.variable} h-full antialiased`}
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="font-sans min-h-screen bg-[#09090B] text-[#FAFAFA] flex flex-col selection:bg-indigo-500/30">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: noFlash }} />
+      </head>
+      <body className="min-h-screen bg-ink text-text flex flex-col selection:bg-signal/30">
         {children}
       </body>
     </html>

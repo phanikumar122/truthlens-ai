@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, Download, BarChart3, Database, Search, ShieldAlert, CheckCircle2, AlertTriangle, ShieldCheck, Terminal, Command } from "lucide-react";
+import {
+  Activity, Download, Search, Command, ArrowUpRight, X,
+  Sun, Moon, ShieldCheck, AlertTriangle, Gauge,
+} from "lucide-react";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 interface Result {
@@ -15,15 +18,18 @@ interface Result {
   virality_score: number;
 }
 
+type RiskLevel = "high" | "mod" | "low";
+type Theme = "dark" | "light";
+
 /* ── Constants ─────────────────────────────────────────────────────────────── */
-const API_BASE = "https://cybersoul18-truthlens-backend.hf.space";
-const WS_URL = API_BASE.replace(/^http/, "ws") + "/ws";
+const REST_URL = "/api/results";                                   // proxied → local backend
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
 
 const CATEGORIES: Record<string, string[]> = {
   Economy: ["economy", "market", "stock", "inflation", "bank", "finance", "trade", "price", "cost", "wage"],
   Tech: ["tech", "apple", "google", "ai", "software", "cyber", "digital", "data", "crypto"],
   Health: ["health", "covid", "vaccine", "disease", "medical", "doctor", "hospital", "virus", "cancer", "diet"],
-  Geopolitics: ["war", "election", "president", "policy", "border", "russia", "china", "geopolitics", "nato", "vote"]
+  Geopolitics: ["war", "election", "president", "policy", "border", "russia", "china", "geopolitics", "nato", "vote"],
 };
 
 const getCategory = (text: string) => {
@@ -36,35 +42,75 @@ const getCategory = (text: string) => {
   return null;
 };
 
-/* ── Motion Variants ──────────────────────────────────────────────────────── */
-const containerVariants = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1 }
-  }
+const riskOf = (label: string): RiskLevel =>
+  label === "HIGH RISK" ? "high" : label === "MODERATE" ? "mod" : "low";
+
+const RISK_COLOR: Record<RiskLevel, string> = {
+  high: "var(--color-risk-high)",
+  mod: "var(--color-risk-mod)",
+  low: "var(--color-risk-low)",
 };
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
+const RISK_CHIP: Record<RiskLevel, string> = {
+  high: "risk-chip risk-chip-high",
+  mod: "risk-chip risk-chip-mod",
+  low: "risk-chip risk-chip-low",
+};
+
+const fmtTime = (iso: string) => {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "--:--";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+};
+
+/* ── Motion ────────────────────────────────────────────────────────────────── */
+const listVariants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.04 } },
+};
+
+const rowVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.22, ease: [0.4, 0, 0.2, 1] } },
+  exit: { opacity: 0, transition: { duration: 0.15 } },
 };
 
 /* ── Component ─────────────────────────────────────────────────────────────── */
 export default function TruthLensDashboard() {
   const [results, setResults] = useState<Result[]>([]);
   const [selectedResult, setSelectedResult] = useState<Result | null>(null);
-  const [status, setStatus] = useState("Connecting…");
+  const [status, setStatus] = useState<"Connecting" | "Live" | "Reconnecting" | "Polling">("Connecting");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [isCmdOpen, setIsCmdOpen] = useState(false);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [lastSync, setLastSync] = useState<number | null>(null);
+  const [theme, setTheme] = useState<Theme>("dark");
+
   const wsRef = useRef<WebSocket | null>(null);
   const connectWsRef = useRef<() => void>(() => {});
-  
-  // Data buffer to prevent rapid layout thrashing (stuck effect)
   const bufferRef = useRef<Result[]>([]);
+  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* Cmd+K listener */
+  const isLive = status === "Live";
+
+  /* ── Theme: hydrate from <html data-theme> (set by no-flash script) ────── */
+  useEffect(() => {
+    const current = (document.documentElement.getAttribute("data-theme") as Theme) || "dark";
+    setTheme(current);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(prev => {
+      const next = prev === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("tl-theme", next); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  /* ── Keyboard shortcuts ───────────────────────────────────────────────── */
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -73,111 +119,107 @@ export default function TruthLensDashboard() {
       }
       if (e.key === "Escape") {
         setIsCmdOpen(false);
+        setIsSheetOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* Fetch historical results on mount */
-  useEffect(() => {
-    fetch(`${API_BASE}/results`)
-      .then((r) => r.json())
-      .then((data: Result[]) => {
-        setResults(data);
-        if (data.length > 0) setSelectedResult(data[0]);
-      })
-      .catch(() => {});
+  /* ── Merge new items into results (dedup by text) ─────────────────────── */
+  const mergeResults = useCallback((incoming: Result[]) => {
+    if (!incoming.length) return;
+    setResults(prev => {
+      const existing = new Set(prev.map(p => p.text));
+      const fresh = incoming.filter(d => !existing.has(d.text));
+      if (!fresh.length) return prev;
+      setLastSync(Date.now());
+      return [...fresh.reverse(), ...prev].slice(0, 50);
+    });
   }, []);
 
-  const [nextRefresh, setNextRefresh] = useState(25);
-
-  /* Countdown for next update */
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNextRefresh((prev) => (prev <= 0 ? 0 : prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  /* Safety Polling (Backup if WS fails) */
-  useEffect(() => {
-    const fetchResults = () => {
-      fetch(`/api/results`)
-        .then(res => res.json())
-        .then((data: Result[]) => {
-          if (data && Array.isArray(data)) {
-            setResults(prev => {
-              // Only add items we don't already have
-              const existingTexts = new Set(prev.map(p => p.text));
-              const newItems = data.filter(d => !existingTexts.has(d.text));
-              if (newItems.length === 0) return prev;
-              return [...newItems, ...prev].slice(0, 50);
-            });
-            if (data.length > 0 && !selectedResult) setSelectedResult(data[0]);
-          }
-        })
-        .catch(() => {});
-    };
-
-    const interval = setInterval(fetchResults, 10000); // Poll every 10s
-    return () => clearInterval(interval);
-  }, [selectedResult]);
-
-
-
-  /* WebSocket with auto-reconnect */
-  const connectWs = useCallback(() => {
-    const socket = new WebSocket(WS_URL);
-    wsRef.current = socket;
-
-    socket.onopen = () => setStatus("Live");
-
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        
-        if (msg.type === "ping") {
-          setStatus("Live");
-          setNextRefresh(25);
-          return;
-        }
-
-        if (msg.type === "data" || !msg.type) {
-          const item: Result = msg;
-          bufferRef.current.push(item);
-
-          if (!throttleRef.current) {
-            throttleRef.current = setTimeout(() => {
-              const currentIncoming = [...bufferRef.current];
-              bufferRef.current = [];
-              throttleRef.current = null;
-
-              setResults((prev) => {
-                const newItems = currentIncoming.filter(b => !prev.some(p => p.text === b.text));
-                if (newItems.length === 0) return prev;
-                return [...newItems.reverse(), ...prev].slice(0, 50);
-              });
-            }, 300);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to parse WS message:", err);
+  const fetchResults = useCallback(async () => {
+    try {
+      const res = await fetch(REST_URL);
+      if (!res.ok) return;
+      const data: Result[] = await res.json();
+      if (Array.isArray(data)) {
+        mergeResults(data);
+        setSelectedResult(cur => cur ?? (data.length ? data[0] : null));
       }
-    };
+    } catch { /* swallowed; polling/WS will retry */ }
+  }, [mergeResults]);
 
-    socket.onclose = () => {
-      setStatus("Reconnecting…");
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.CLOSED) {
-          connectWsRef.current();
-        }
-      }, 3000);
-    };
+  /* Initial REST load */
+  useEffect(() => {
+    fetchResults();
+  }, [fetchResults]);
 
-    socket.onerror = () => socket.close();
+  /* ── Polling: fallback ONLY when WS is down ───────────────────────────── */
+  const startPolling = useCallback(() => {
+    if (pollingRef.current) return;
+    setStatus("Polling");
+    pollingRef.current = setInterval(fetchResults, 10_000);
+  }, [fetchResults]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
   }, []);
+
+  /* ── WebSocket: primary transport ─────────────────────────────────────── */
+  const connectWs = useCallback(() => {
+    try {
+      const socket = new WebSocket(WS_URL);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        setStatus("Live");
+        stopPolling();
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "ping") {
+            setStatus("Live");
+            setLastSync(Date.now());
+            return;
+          }
+          if (msg.type === "data" || !msg.type) {
+            const item: Result = msg;
+            bufferRef.current.push(item);
+            if (!throttleRef.current) {
+              throttleRef.current = setTimeout(() => {
+                const incoming = [...bufferRef.current];
+                bufferRef.current = [];
+                throttleRef.current = null;
+                mergeResults(incoming);
+              }, 300);
+            }
+          }
+        } catch (err) {
+          console.error("Failed to parse WS message:", err);
+        }
+      };
+
+      socket.onclose = () => {
+        setStatus("Reconnecting");
+        startPolling();
+        setTimeout(() => {
+          if (wsRef.current?.readyState === WebSocket.CLOSED) {
+            connectWsRef.current();
+          }
+        }, 3000);
+      };
+
+      socket.onerror = () => socket.close();
+    } catch {
+      startPolling();
+    }
+  }, [mergeResults, startPolling, stopPolling]);
 
   useEffect(() => {
     connectWsRef.current = connectWs;
@@ -185,32 +227,80 @@ export default function TruthLensDashboard() {
 
   useEffect(() => {
     connectWs();
-    return () => wsRef.current?.close();
-  }, [connectWs]);
+    return () => {
+      wsRef.current?.close();
+      stopPolling();
+    };
+  }, [connectWs, stopPolling]);
 
-  // Helper values
-  const isLive = status === "Live";
-  const filteredResults = activeTag 
-    ? results.filter(res => getCategory(res.text) === activeTag)
-    : results;
+  /* ── Derived (memoized) ───────────────────────────────────────────────── */
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    results.forEach(r => {
+      const c = getCategory(r.text);
+      const key = c ?? "Uncategorized";
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [results]);
+
+  const filteredResults = useMemo(
+    () => (activeTag ? results.filter(res => getCategory(res.text) === activeTag) : results),
+    [results, activeTag],
+  );
+
+  const stats = useMemo(() => {
+    const total = results.length || 1;
+    const high = results.filter(r => riskOf(r.label) === "high").length;
+    const avgConf = results.reduce((s, r) => s + r.confidence, 0) / total;
+    return {
+      total: results.length,
+      highPct: Math.round((high / total) * 100),
+      highCount: high,
+      avgConf: Math.round(avgConf),
+    };
+  }, [results]);
+
+  const distribution = useMemo(() => {
+    const counts = { high: 0, mod: 0, low: 0 } as Record<RiskLevel, number>;
+    filteredResults.forEach(r => { counts[riskOf(r.label)]++; });
+    const total = filteredResults.length || 1;
+    return {
+      counts,
+      total: filteredResults.length,
+      percents: {
+        high: (counts.high / total) * 100,
+        mod: (counts.mod / total) * 100,
+        low: (counts.low / total) * 100,
+      } as Record<RiskLevel, number>,
+    };
+  }, [filteredResults]);
+
+  /* Confidence trend (sparkline): last 16 by time, oldest→newest */
+  const confidenceTrend = useMemo(() => {
+    return [...results]
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+      .slice(-16)
+      .map(r => r.confidence);
+  }, [results]);
+
+  /* ── Actions ──────────────────────────────────────────────────────────── */
+  const openDetail = (r: Result) => {
+    setSelectedResult(r);
+    setIsSheetOpen(true);
+  };
 
   const handleExport = () => {
     if (results.length === 0) return;
-    
-    // CSV configuration
     const headers = ["Source", "Label", "Confidence (%)", "News", "Virality Score", "Explanation", "Timestamp"];
-    
     const rows = results.map(res => {
       const text = res.text.replace(/"/g, '""');
       const explanation = res.explanation.replace(/"/g, '""');
       return `"${res.source}","${res.label}","${res.confidence}","${text}","${res.virality_score}","${explanation}","${res.timestamp}"`;
     });
-    
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    
-    // Trigger download
     const link = document.createElement("a");
     link.href = url;
     link.setAttribute("download", `truthlens_export_${new Date().toISOString().slice(0, 10)}.csv`);
@@ -219,446 +309,500 @@ export default function TruthLensDashboard() {
     document.body.removeChild(link);
   };
 
+  const relTime = (ms: number | null) => {
+    if (!ms) return "—";
+    const s = Math.round((Date.now() - ms) / 1000);
+    if (s < 5) return "just now";
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    return `${m}m ago`;
+  };
+
+  const statusLabel =
+    status === "Live" ? "Live" :
+    status === "Polling" ? "Polling" :
+    status === "Reconnecting" ? "Reconnecting" : "Connecting";
+
+  const kpiCards = [
+    {
+      label: "verified", value: stats.total, suffix: "", accent: "var(--color-signal)",
+      sub: `${categoryCounts.Tech || 0} tech · ${categoryCounts.Health || 0} health`,
+      icon: ShieldCheck, trend: confidenceTrend,
+    },
+    {
+      label: "high-risk", value: stats.highPct, suffix: "%", accent: "var(--color-risk-high)",
+      sub: `${stats.highCount} flagged`, icon: AlertTriangle, trend: undefined,
+    },
+    {
+      label: "avg confidence", value: stats.avgConf, suffix: "%", accent: "var(--color-text)",
+      sub: `${results.length} samples`, icon: Gauge, trend: undefined,
+    },
+  ];
+
+  const cmdActions = [
+    { icon: Download, label: "Export claims to CSV", action: () => { handleExport(); setIsCmdOpen(false); } },
+    { icon: Activity, label: "Show full feed", action: () => { setActiveTag(null); setIsCmdOpen(false); } },
+    { icon: Search, label: "Filter by Tech", action: () => { setActiveTag("Tech"); setIsCmdOpen(false); } },
+    { icon: Search, label: "Filter by Health", action: () => { setActiveTag("Health"); setIsCmdOpen(false); } },
+    { icon: Search, label: "Filter by Economy", action: () => { setActiveTag("Economy"); setIsCmdOpen(false); } },
+    { icon: Search, label: "Filter by Geopolitics", action: () => { setActiveTag("Geopolitics"); setIsCmdOpen(false); } },
+  ];
+
   /* ── Render ──────────────────────────────────────────────────────────────── */
   return (
-    <div className="min-h-screen font-sans selection:bg-indigo-500/30 overflow-x-hidden relative flex flex-col items-center">
-      
-      {/* Subtle ambient light layer */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-20%] left-[-10%] w-[40%] h-[40%] bg-indigo-600/10 rounded-full blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 rounded-full blur-[120px]" />
-      </div>
+    <div className="min-h-screen flex flex-col overflow-x-hidden">
 
-      <div className="w-full max-w-[1500px] px-4 md:px-8 py-4 md:py-8 relative z-10 flex flex-col min-h-screen lg:h-screen">
-        
-        {/* ── Navbar ─────────────────────────────────────────────────────────── */}
-        <motion.nav 
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-          className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 md:mb-8 skeuo-card rounded-2xl px-4 md:px-6 py-4 w-full sticky top-4 z-50 transition-all border-t-white/10 gap-4"
-        >
-          <div className="flex justify-between items-center w-full lg:w-auto">
-            <div className="flex items-center gap-3 md:gap-4 min-w-0">
-              <div className="w-8 h-8 md:w-10 md:h-10 shrink-0 rounded-xl bg-gradient-primary flex items-center justify-center shadow-[0_0_20px_rgba(99,102,241,0.4)]">
-                <ShieldCheck className="w-4 h-4 md:w-5 md:h-5 text-white" strokeWidth={2.5} />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-lg md:text-xl font-bold tracking-tight text-white flex items-center gap-1.5 truncate">
-                  TruthLens <span className="text-gradient-primary">AI</span>
-                </h1>
-                <p className="text-[9px] md:text-[10px] text-gray-400 font-medium uppercase tracking-widest truncate">Global Intelligence</p>
-              </div>
-            </div>
-            
-            <button 
-              onClick={() => setIsCmdOpen(true)}
-              className="lg:hidden flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all text-sm text-gray-400 group focus:outline-none skeuo-button"
-            >
-              <Command className="w-4 h-4 text-indigo-400" />
-              <span className="text-[10px] uppercase font-bold text-engraved">Menu</span>
-            </button>
-          </div>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-40 border-b border-line bg-ink/85 backdrop-blur-md">
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8">
 
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 md:gap-6 w-full lg:w-auto min-w-0">
-            
-            <button 
-              onClick={() => setIsCmdOpen(true)}
-              className="hidden lg:flex shrink-0 items-center gap-2 px-3 py-1.5 skuo-button rounded-xl transition-all text-sm text-gray-400 group focus:outline-none skeuo-button"
-            >
-              <Command className="w-4 h-4 group-hover:text-indigo-400 transition-colors" />
-              <span className="text-engraved">Menu</span>
-              <div className="flex items-center gap-0.5 ml-2">
-                <span className="px-1.5 py-0.5 rounded skeuo-inset text-[10px] font-mono border border-white/5 group-hover:border-indigo-500/30 transition-colors">⌘</span>
-                <span className="px-1.5 py-0.5 rounded skeuo-inset text-[10px] font-mono border border-white/5 group-hover:border-indigo-500/30 transition-colors">K</span>
+          <div className="flex items-center justify-between h-14 gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-md border border-line-bright bg-panel flex items-center justify-center shrink-0">
+                <span className="w-2.5 h-2.5 rounded-sm bg-signal" />
               </div>
-            </button>
-
-            <div className="h-8 w-px bg-white/10 hidden lg:block shrink-0" />
-
-            <div className="flex overflow-x-auto scrollbar-hide w-full lg:w-auto pb-1 lg:pb-0">
-              <div className="flex p-1 skeuo-inset border border-white/5 rounded-xl relative w-max">
-                {["Feed", "Economy", "Tech", "Health", "Geopolitics"].map((tag) => {
-                  const isFeed = tag === "Feed";
-                  const isActive = isFeed ? activeTag === null : activeTag === tag;
-                  
-                  return (
-                    <button
-                      key={tag}
-                      onClick={() => setActiveTag(isFeed ? null : tag)}
-                      className={`relative text-xs md:text-sm font-medium transition-all cursor-pointer px-3 md:px-4 py-1.5 rounded-lg z-10 outline-none focus:outline-none shrink-0 ${
-                        isActive ? "text-white skeuo-button scale-105" : "text-gray-400 hover:text-gray-200"
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  )
-                })}
-              </div>
+              <span className="font-semibold tracking-tight text-text text-[15px]">truthlens</span>
+              <span className="hidden sm:inline eyebrow border-l border-line pl-2.5 ml-0.5">verification desk</span>
             </div>
 
-            <div className="h-8 w-px bg-white/10 hidden md:block shrink-0" />
-
-            <div className="flex items-center justify-between w-full lg:w-auto gap-3 pt-1 lg:pt-0 shrink-0">
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg skeuo-inset border ${isLive ? 'border-green-500/20' : 'border-red-500/20'}`}>
-                <div className={`skeuo-led shrink-0 ${isLive ? 'bg-green-500 text-green-500 animate-[pulse_1s_ease-in-out_infinite]' : 'bg-red-500 text-red-500'}`} />
-                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-wider whitespace-nowrap ${isLive ? 'text-green-400' : 'text-red-400'}`}>{status}</span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-2.5 h-8 rounded-md border border-line bg-panel">
+                <span className={`status-led ${isLive ? "status-led-live animate-pulse" : "status-led-down"}`} />
+                <span className="mono text-[11px] font-medium text-dim">{statusLabel}</span>
               </div>
 
-              <button 
+              <ThemeToggle theme={theme} onToggle={toggleTheme} />
+
+              <button
                 onClick={handleExport}
                 disabled={results.length === 0}
-                className="px-3 md:px-4 py-1.5 md:py-2 skeuo-button hover:bg-[#1F2937] disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-[9px] md:text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all focus:outline-none group shrink-0"
+                className="btn h-8 px-2.5 sm:px-3 flex items-center gap-1.5 text-dim hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                aria-label="Export results as CSV"
               >
-                <Download className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 group-hover:text-white transition-colors shrink-0" />
-                <span className="text-gray-200 group-hover:text-white transition-colors whitespace-nowrap">Export</span>
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline text-[12px] font-medium">Export</span>
+              </button>
+
+              <button
+                onClick={() => setIsCmdOpen(true)}
+                className="btn h-8 px-2.5 flex items-center gap-1.5 text-dim hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                aria-label="Open command menu"
+              >
+                <Command className="w-3.5 h-3.5" />
+                <span className="hidden md:flex items-center gap-0.5">
+                  <kbd className="mono text-[10px] text-faint">⌘K</kbd>
+                </span>
               </button>
             </div>
           </div>
-        </motion.nav>
 
-        {/* ── Main Layout ──────────────────────────────────────────────────────── */}
-        <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1 min-h-0">
-          
-          {/* Left Column — Live Feed */}
-          <div className="lg:col-span-4 xl:col-span-4 flex flex-col gap-5 min-h-[400px] lg:min-h-0 min-w-0">
-            <div className="flex justify-between items-end px-2">
-              <h2 className="text-sm font-bold text-gray-300 tracking-wide uppercase flex items-center gap-2">
-                <Activity className="w-4 h-4 text-indigo-400" /> Live Stream
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide -mb-px h-11">
+            {["Feed", "Economy", "Tech", "Health", "Geopolitics"].map((tag) => {
+              const isFeed = tag === "Feed";
+              const isActive = isFeed ? activeTag === null : activeTag === tag;
+              const count = isFeed ? results.length : (categoryCounts[tag] || 0);
+              return (
+                <button
+                  key={tag}
+                  onClick={() => setActiveTag(isFeed ? null : tag)}
+                  className={`shrink-0 h-9 px-3 flex items-center gap-2 border-b-2 transition-colors text-[12px] font-medium focus-visible:outline-none ${
+                    isActive ? "border-signal text-text" : "border-transparent text-dim hover:text-text"
+                  }`}
+                >
+                  {tag}
+                  <span className="mono text-[10px] text-faint">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </header>
+
+      {/* ── KPI hero band ──────────────────────────────────────────────────── */}
+      <div className="border-b border-line bg-ink">
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            {kpiCards.map((s) => {
+              const Icon = s.icon;
+              return (
+                <motion.div
+                  key={s.label}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="panel px-3 py-2.5 sm:px-4 sm:py-3 relative overflow-hidden"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="eyebrow truncate">{s.label}</span>
+                    <Icon className="w-3 h-3 text-faint shrink-0" />
+                  </div>
+                  <div className="flex items-baseline gap-0.5">
+                    <span className="mono text-xl sm:text-3xl font-semibold tracking-tight" style={{ color: s.accent }}>
+                      {s.value}
+                    </span>
+                    {s.suffix && <span className="mono text-sm sm:text-base text-faint">{s.suffix}</span>}
+                  </div>
+                  {s.sub && <div className="mono text-[10px] text-faint mt-0.5 hidden sm:block truncate">{s.sub}</div>}
+                  {s.trend && s.trend.length > 1 && (
+                    <div className="absolute bottom-0 right-0 opacity-50">
+                      <Sparkline values={s.trend} color={s.accent} />
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Status strip ───────────────────────────────────────────────────── */}
+      <div className="border-b border-line bg-ink">
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 h-9 flex items-center justify-between text-[11px]">
+          <div className="flex items-center divide-x divide-line">
+            <span className="pr-3 mono text-faint">items <span className="text-dim">{filteredResults.length}</span></span>
+            <span className="px-3 mono text-faint hidden sm:block">last sync <span className="text-dim">{relTime(lastSync)}</span></span>
+            <span className="px-3 mono text-faint hidden md:block">feed <span className="text-dim">{activeTag ?? "all"}</span></span>
+          </div>
+          <span className="mono text-faint hidden sm:block">classification · confidence · virality</span>
+        </div>
+      </div>
+
+      {/* ── Main ───────────────────────────────────────────────────────────── */}
+      <main className="flex-1 max-w-[1500px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-5 lg:py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+          {/* ── Wire feed ──────────────────────────────────────────────────── */}
+          <section className="lg:col-span-5 xl:col-span-4 flex flex-col min-w-0">
+            <div className="flex items-center justify-between mb-3 px-0.5">
+              <h2 className="eyebrow flex items-center gap-1.5">
+                <Activity className="w-3 h-3 text-signal" />
+                incoming wire
               </h2>
-              <span className="text-xs text-indigo-400 font-mono font-medium bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
-                Sync {nextRefresh}s
-              </span>
+              <span className="mono text-[10px] text-faint">{filteredResults.length} claims</span>
             </div>
 
-            <div className="flex-1 overflow-y-auto max-h-[45vh] lg:max-h-none space-y-4 pr-3 scrollbar-thin pb-4">
+            <div className="panel flex-1 overflow-y-auto max-h-[55vh] lg:max-h-[calc(100vh-340px)]">
               <AnimatePresence mode="popLayout">
                 {results.length === 0 ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <div key={`skel-${i}`} className="p-6 saas-card animate-pulse flex flex-col gap-4">
-                      <div className="flex justify-between"><div className="h-3 w-16 bg-[#1F2937] rounded"></div><div className="h-4 w-20 bg-[#1F2937] rounded"></div></div>
-                      <div className="space-y-2">
-                        <div className="h-4 w-full bg-[#1F2937] rounded"></div>
-                        <div className="h-4 w-2/3 bg-[#1F2937] rounded"></div>
-                      </div>
-                    </div>
-                  ))
+                  <div className="p-3">
+                    {Array.from({ length: 7 }).map((_, i) => (
+                      <div key={i} className="h-[58px] border-b border-line animate-pulse" />
+                    ))}
+                  </div>
                 ) : filteredResults.length === 0 ? (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="p-8 skeuo-card text-center text-gray-500 text-sm flex flex-col items-center justify-center gap-3 border-dashed border-gray-700 skeuo-inset"
-                  >
-                    <Search className="w-6 h-6 text-gray-600" />
-                    No internal activity matching &quot;{activeTag}&quot;
-                  </motion.div>
+                  <div className="p-10 flex flex-col items-center justify-center gap-3 text-center">
+                    <Search className="w-5 h-5 text-faint" />
+                    <p className="text-[12px] text-dim">No claims in <span className="text-text">{activeTag}</span> yet.</p>
+                  </div>
                 ) : (
-                  <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-6">
+                  <motion.ul variants={listVariants} initial="hidden" animate="show">
                     {filteredResults.map((res, i) => {
+                      const risk = riskOf(res.label);
                       const isSelected = selectedResult === res;
-                      const isHigh = res.label === "HIGH RISK";
-                      const isMod = res.label === "MODERATE";
-                      
-                      const indicatorColor = isHigh ? "bg-red-500" : isMod ? "bg-amber-500" : "bg-green-500";
-                      const textClass = isHigh ? "text-red-400" : isMod ? "text-amber-400" : "text-green-400";
-                      const bgClass = isHigh ? "bg-red-500/10 border-red-500/20" : isMod ? "bg-amber-500/10 border-amber-500/20" : "bg-green-500/10 border-green-500/20";
-
+                      const cat = getCategory(res.text);
                       return (
-                        <motion.div
-                          key={`${res.timestamp}-${i}`}
-                          variants={itemVariants}
-                          layout
-                          onClick={() => setSelectedResult(res)}
-                          className={`p-5 skeuo-card skeuo-card-hover cursor-pointer group relative overflow-hidden ${
-                            isSelected 
-                              ? "border-indigo-500/50 bg-gradient-to-br from-[#2a303a] to-[#1a1d23]"
-                              : ""
-                          }`}
-                        >
-                          {isSelected && (
-                            <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500 shadow-[0_0_15px_#6366F1]" />
-                          )}
-                          <div className="flex justify-between items-start mb-4">
-                            <span className="text-[10px] text-gray-500 font-bold uppercase flex items-center gap-1.5 tracking-widest text-engraved truncate">
-                              <Database className="w-3 h-3 shrink-0" /> <span className="truncate">{res.source}</span>
-                            </span>
-                            <span className={`text-[9px] px-2 py-0.5 rounded-full font-black tracking-tighter border shadow-sm shrink-0 ml-2 ${bgClass} ${textClass}`}>
-                              {res.label}
-                            </span>
-                          </div>
-
-                          <p className={`text-sm leading-relaxed mb-5 line-clamp-2 font-medium ${isSelected ? "text-white text-embossed" : "text-gray-400"}`}>
-                            {res.text}
-                          </p>
-
-                          <div className="skeuo-progress-track">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${res.confidence}%` }}
-                              transition={{ duration: 1, ease: [0.4, 0, 0.2, 1] }}
-                              className={`skeuo-progress-fill ${indicatorColor}`}
-                            />
-                          </div>
-                        </motion.div>
+                        <motion.li key={`${res.timestamp}-${i}`} variants={rowVariants} exit="exit" layout>
+                          <button
+                            onClick={() => openDetail(res)}
+                            onMouseEnter={() => setSelectedResult(res)}
+                            className={`w-full text-left px-3.5 py-3 border-b border-line transition-colors flex flex-col gap-1.5 focus-visible:outline-none focus-visible:bg-panel-2 ${
+                              isSelected ? "panel-hover-selected" : "hover:bg-panel-2"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="risk-dot" style={{ background: RISK_COLOR[risk] }} />
+                              <span className="mono text-[10px] text-faint">{fmtTime(res.timestamp)}</span>
+                              <span className="mono text-[10px] text-dim truncate flex-1">{res.source}</span>
+                              {cat && <span className="mono text-[9px] text-faint uppercase tracking-wide hidden sm:inline">{cat}</span>}
+                              <span className="mono text-[11px] font-semibold" style={{ color: RISK_COLOR[risk] }}>{res.confidence}%</span>
+                            </div>
+                            <p className="text-[12.5px] leading-snug text-dim line-clamp-1 pl-[18px]">{res.text}</p>
+                          </button>
+                        </motion.li>
                       );
                     })}
-                  </motion.div>
+                  </motion.ul>
                 )}
               </AnimatePresence>
             </div>
-          </div>
+          </section>
 
-          {/* Right Column — Detailed Analysis & Charts */}
-          <div className="lg:col-span-8 xl:col-span-8 flex flex-col gap-6 min-h-0 pb-4">
-            <div className="flex justify-between items-end px-1 mb-0 lg:mb-1">
-              <h2 className="text-sm font-bold text-gray-300 tracking-wide uppercase">
-                Intelligence Brief
-              </h2>
-            </div>
-          
-            {selectedResult ? (
-              <motion.div
-                key={selectedResult.text}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-                className="skeuo-card p-8 flex flex-col flex-1 relative overflow-hidden border-t-white/5"
-              >
-                {/* Decorative background glow for the active card */}
-                <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/5 rounded-full blur-[80px] pointer-events-none" />
+          {/* ── Detail (desktop + tablet) ─────────────────────────────────── */}
+          <section className="hidden lg:flex lg:col-span-7 xl:col-span-8 flex-col gap-5 min-w-0">
+            <DetailPanel result={selectedResult} />
+            <DistributionPanel distribution={distribution} />
+          </section>
+        </div>
+      </main>
 
-                <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4 relative z-10">
-                  <div>
-                    <h2 className="text-xl md:text-3xl font-black text-white tracking-tight mb-3 flex flex-wrap items-center gap-2 md:gap-3">
-                      <span className="truncate max-w-full">{selectedResult.source}</span>
-                      {selectedResult.label === "HIGH RISK" && <ShieldAlert className="w-6 h-6 md:w-7 md:h-7 text-red-500 shrink-0" />}
-                      {selectedResult.label === "MODERATE" && <AlertTriangle className="w-6 h-6 md:w-7 md:h-7 text-amber-500 shrink-0" />}
-                      {selectedResult.label === "LOW RISK" && <CheckCircle2 className="w-6 h-6 md:w-7 md:h-7 text-green-500 shrink-0" />}
-                    </h2>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="px-3 py-1 skeuo-inset text-[9px] font-black text-gray-400 uppercase tracking-widest border border-white/5">ML-Verified</span>
-                      <span className="px-3 py-1 skeuo-inset text-[9px] font-black text-gray-400 uppercase tracking-widest border border-white/5">Correlated</span>
-                    </div>
-                  </div>
-                  <div className="text-left md:text-right w-full md:w-auto skeuo-card px-6 py-3 rounded-2xl shadow-inner border-t-white/10 flex flex-row md:flex-col items-center md:items-end justify-between md:justify-center">
-                    <div className="text-2xl md:text-3xl font-black text-gradient-primary font-mono tracking-tighter text-embossed">
-                      {selectedResult.virality_score}
-                    </div>
-                    <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1 text-engraved">
-                      Virality Score
-                    </div>
-                  </div>
-                </div>
-
-                <div className="skeuo-inset rounded-2xl p-6 mb-8 border-l-[6px] border-l-indigo-500 relative z-10">
-                  <p className="text-[18px] font-bold leading-relaxed text-white text-embossed italic">
-                    &quot;{selectedResult.text}&quot;
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-8 flex-1 relative z-10">
-                  <div className="space-y-6">
-                    <div>
-                      <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full" />
-                        Algorithmic Rationale
-                      </h4>
-                      <p className="text-sm text-gray-400 leading-relaxed font-bold skeuo-inset p-4 rounded-xl border border-white/5 text-engraved">
-                        {selectedResult.explanation}
-                      </p>
-                    </div>
-
-                    <div>
-                      <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Terminal className="w-3.5 h-3.5 text-blue-500" />
-                        Live Execution Log
-                      </h4>
-                      <div className="text-[11px] font-mono text-gray-500 leading-relaxed skeuo-inset p-4 rounded-xl border border-white/10 flex flex-col gap-1.5 relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-3"><div className="skeuo-led bg-blue-500 text-blue-500 animate-pulse" /></div>
-                        <div><span className="text-indigo-400 font-bold">{'>'}</span> init_truthlens_core --id={selectedResult.timestamp.slice(-6).replace(/[^0-9]/g, '8')}</div>
-                        <div><span className="text-gray-700">[SYS]</span> Connected to global ingestion pipeline.</div>
-                        <div><span className="text-indigo-400 font-bold">{'>'}</span> analyze_linguistics --len={selectedResult.text.length}</div>
-                        <div className="text-green-500/80 mb-1"><span className="text-gray-700">[AI]</span> Extracted {Math.floor(selectedResult.text.length / 10) || 5} semantic feature vectors.</div>
-                        <div><span className="text-indigo-400 font-bold">{'>'}</span> calc_deterministic_score --verify=true</div>
-                        <div><span className="text-gray-700">[AI]</span> Output: <span className={selectedResult.label === "HIGH RISK" ? "text-red-500 font-black" : selectedResult.label === "MODERATE" ? "text-amber-500 font-black" : "text-green-500 font-black"}>{selectedResult.label}</span> ({selectedResult.confidence}%)</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-center">
-                    <div className="bg-gradient-to-b from-[#0F172A] to-[#111827] border border-white/5 rounded-2xl p-8 flex flex-col justify-center items-center text-center h-full relative overflow-hidden shadow-inner">
-                      
-                      {/* Metric ring background effect */}
-                      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.05)_0,transparent_70%)]" />
-                      
-                      <div className="text-6xl font-black text-white tracking-tighter mb-2 flex items-baseline relative z-10">
-                        <Counter value={selectedResult.confidence} />
-                        <span className="text-2xl text-gray-500 font-semibold ml-1">%</span>
-                      </div>
-                      <div className="text-[11px] font-bold text-indigo-400 uppercase tracking-widest mb-8 relative z-10 shadow-sm">
-                        Confidence Metric
-                      </div>
-                      <div className="w-full h-2.5 bg-[#1F2937] rounded-full overflow-hidden shadow-inner border border-white/5 relative z-10">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${selectedResult.confidence}%` }}
-                          transition={{ duration: 1.2, ease: [0.4, 0, 0.2, 1], delay: 0.2 }}
-                          className={`h-full relative overflow-hidden ${
-                            selectedResult.label === "HIGH RISK" ? "bg-red-500" : selectedResult.label === "MODERATE" ? "bg-amber-500" : "bg-green-500"
-                          }`}
-                        >
-                          <div className="absolute inset-0 bg-white/20 w-[200%] -skew-x-12 translate-x-[-150%] animate-[shimmer_2s_infinite]" />
-                        </motion.div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-              </motion.div>
-            ) : (
-              <div className="skeuo-card p-12 flex items-center justify-center flex-1 border-dashed border-white/10 skeuo-inset">
-                <div className="flex flex-col items-center gap-5 text-gray-600">
-                  <div className="w-16 h-16 rounded-2xl skeuo-card border border-white/5 flex items-center justify-center">
-                    <Search className="w-8 h-8" />
-                  </div>
-                  <p className="text-xs font-black tracking-widest uppercase text-engraved">Select intelligence item for diagnostics</p>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom — Analytics Bar Chart */}
-            <div className="skeuo-card p-6 h-[200px] flex flex-col shrink-0 relative overflow-hidden border-t-white/5">
-              <div className="absolute top-0 right-0 w-[30%] h-[100%] bg-blue-500/5 blur-[50px] pointer-events-none" />
-              
-              <div className="flex items-center justify-between mb-4 relative z-10">
-                <h3 className="text-[10px] font-black text-gray-500 tracking-widest uppercase flex items-center gap-2 text-engraved">
-                  <BarChart3 className="w-4 h-4 text-indigo-400" />
-                  Volume History (24H)
-                </h3>
-              </div>
-              
-              <div className="flex-1 flex items-end justify-between px-2 gap-3 mt-2 relative z-10 skeuo-inset p-4 rounded-xl">
-                {[40, 70, 45, 90, 65, 80, 50, 60, 30, 85, 95, 40].map((h, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ height: 0 }}
-                    animate={{ height: `${h}%` }}
-                    transition={{ duration: 0.8, delay: i * 0.04, ease: [0.4, 0, 0.2, 1] }}
-                    className="flex-1 bg-gradient-to-t from-[#1A1D23] to-[#2C323A] border-t border-white/10 rounded-t-sm hover:from-indigo-600 hover:to-indigo-400 transition-all cursor-pointer group relative shadow-md"
-                  >
-                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 skeuo-card text-white text-[9px] font-black px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-all pointer-events-none transform group-hover:-translate-y-1">
-                      {h}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-              <div className="flex justify-between mt-4 text-[9px] text-gray-600 font-black border-t border-white/5 pt-3 relative z-10 uppercase tracking-widest text-engraved">
-                <span>00:00</span>
-                <span>06:00</span>
-                <span>12:00</span>
-                <span>18:00</span>
-                <span>23:59</span>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-      
-      {/* ── Command Palette ─────────────────────────────────────────────────── */}
+      {/* ── Mobile bottom-sheet ────────────────────────────────────────────── */}
       <AnimatePresence>
-        {isCmdOpen && (
-          <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="absolute inset-0 bg-[#0A0F1C]/80 backdrop-blur-sm"
-              onClick={() => setIsCmdOpen(false)}
+        {isSheetOpen && selectedResult && (
+          <div className="lg:hidden fixed inset-0 z-[80] flex flex-col justify-end">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 overlay-bg" onClick={() => setIsSheetOpen(false)}
             />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: -20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: -20 }}
-              className="relative w-full max-w-2xl bg-[#0F172A] border border-white/10 rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col"
+            <motion.div
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 34 }}
+              className="relative bg-panel border-t border-line-bright rounded-t-2xl max-h-[88vh] flex flex-col"
+              role="dialog" aria-modal="true"
             >
-              <div className="flex items-center px-4 py-3 border-b border-white/10 bg-[#111827]">
-                <Search className="w-5 h-5 text-gray-500 mr-3" />
-                <input 
-                  autoFocus
-                  type="text" 
-                  placeholder="Type a command or search..." 
-                  className="flex-1 bg-transparent text-white outline-none placeholder:text-gray-500 font-medium text-sm"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                />
-                <div className="flex items-center gap-1.5 ml-3">
-                  <span className="text-[10px] font-mono bg-[#1F2937] border border-white/5 px-1.5 py-0.5 rounded text-gray-400">ESC</span>
-                </div>
+              <div className="flex flex-col items-center pt-2.5 pb-1 shrink-0">
+                <div className="w-9 h-1 rounded-full bg-line-bright" />
               </div>
-              <div className="max-h-[350px] overflow-y-auto p-2 bg-[#0F172A]">
-                <div className="px-3 py-2 text-[10px] font-bold text-gray-500 uppercase tracking-widest mt-1 mb-1">
-                  Quick Actions
-                </div>
-                {[
-                  { icon: Download, label: "Export Data to CSV", action: () => { handleExport(); setIsCmdOpen(false); } },
-                  { icon: Activity, label: "View Live Stream", action: () => { setActiveTag(null); setIsCmdOpen(false); } },
-                  { icon: Database, label: "Filter: Tech Only", action: () => { setActiveTag("Tech"); setIsCmdOpen(false); } },
-                  { icon: Database, label: "Filter: Health Only", action: () => { setActiveTag("Health"); setIsCmdOpen(false); } },
-                  { icon: Database, label: "Filter: Economy Only", action: () => { setActiveTag("Economy"); setIsCmdOpen(false); } },
-                ].filter(item => item.label.toLowerCase().includes(searchQuery.toLowerCase())).map((item, idx) => (
-                  <button 
-                    key={idx}
-                    onClick={item.action}
-                    className="w-full flex items-center px-3 py-3 hover:bg-indigo-500/10 rounded-xl transition-colors text-left group focus:outline-none focus:bg-indigo-500/10"
-                  >
-                    <item.icon className="w-4 h-4 text-gray-400 group-hover:text-indigo-400 mr-3 transition-colors" />
-                    <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">{item.label}</span>
-                  </button>
-                ))}
+              <button
+                onClick={() => setIsSheetOpen(false)}
+                className="absolute top-3 right-3 w-8 h-8 rounded-md flex items-center justify-center text-faint hover:text-text hover:bg-panel-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="overflow-y-auto px-4 pb-10 pt-2">
+                <DetailPanel result={selectedResult} mobile />
+                <DistributionPanel distribution={distribution} />
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* CSS Animation defined locally for shimmer */}
-      <style dangerouslySetInnerHTML={{__html: `
-        @keyframes shimmer {
-          100% { transform: translateX(150%); }
-        }
-      `}} />
+      {/* ── Command palette ────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isCmdOpen && (
+          <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[12vh] px-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 overlay-bg" onClick={() => setIsCmdOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: -8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: -8 }}
+              transition={{ duration: 0.15 }}
+              className="relative w-full max-w-xl panel overflow-hidden"
+            >
+              <div className="flex items-center px-4 h-12 border-b border-line">
+                <Search className="w-4 h-4 text-faint mr-3" />
+                <input
+                  autoFocus type="text" placeholder="Type a command or search…"
+                  className="flex-1 bg-transparent text-text outline-none placeholder:text-faint text-[13px]"
+                  value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                />
+                <kbd className="mono text-[10px] text-faint border border-line rounded px-1.5 py-0.5">ESC</kbd>
+              </div>
+              <div className="max-h-[340px] overflow-y-auto p-2">
+                <div className="px-2.5 pt-2 pb-1 eyebrow">actions</div>
+                {cmdActions
+                  .filter(item => item.label.toLowerCase().includes(searchQuery.toLowerCase()))
+                  .map((item, idx) => (
+                    <button
+                      key={idx} onClick={item.action}
+                      className="w-full flex items-center px-2.5 py-2.5 rounded-md text-left hover:bg-panel-2 transition-colors group focus-visible:outline-none focus-visible:bg-panel-2"
+                    >
+                      <item.icon className="w-4 h-4 text-faint group-hover:text-dim mr-3" />
+                      <span className="text-[13px] text-dim group-hover:text-text">{item.label}</span>
+                    </button>
+                  ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-// Simple Counter component for animated numbers
+/* ── Theme toggle ──────────────────────────────────────────────────────────── */
+function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="btn h-8 w-8 flex items-center justify-center text-dim hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {theme === "dark" ? (
+          <motion.span key="sun" initial={{ opacity: 0, rotate: -90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: 90 }} transition={{ duration: 0.2 }}>
+            <Sun className="w-4 h-4" />
+          </motion.span>
+        ) : (
+          <motion.span key="moon" initial={{ opacity: 0, rotate: 90 }} animate={{ opacity: 1, rotate: 0 }} exit={{ opacity: 0, rotate: -90 }} transition={{ duration: 0.2 }}>
+            <Moon className="w-4 h-4" />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+}
+
+/* ── Sparkline ─────────────────────────────────────────────────────────────── */
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const w = 64, h = 22, pad = 2;
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (w - pad * 2);
+    const y = h - pad - ((v - min) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
+  return (
+    <svg width={w} height={h} className="overflow-visible">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" opacity="0.6" />
+    </svg>
+  );
+}
+
+/* ── Detail panel (desktop inline + mobile sheet) ──────────────────────────── */
+function DetailPanel({ result, mobile = false }: { result: Result | null; mobile?: boolean }) {
+  if (!result) {
+    return (
+      <div className="panel p-12 flex-1 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Search className="w-6 h-6 text-faint" />
+          <p className="text-[12px] text-dim">Select a claim from the wire to inspect.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const risk = riskOf(result.label);
+
+  return (
+    <motion.article
+      key={result.text}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }}
+      className={`panel ${mobile ? "" : "flex-1"} p-5 sm:p-7`}
+    >
+      <div className="flex items-start justify-between gap-4 mb-5">
+        <div className="min-w-0">
+          <div className="eyebrow mb-1.5">claim</div>
+          <h1 className="text-[15px] sm:text-base font-semibold text-text tracking-tight mono truncate">{result.source}</h1>
+        </div>
+        <span className={RISK_CHIP[risk]}>{result.label}</span>
+      </div>
+
+      <blockquote className="border-l-2 border-signal pl-4 py-1 mb-6">
+        <p className={`leading-relaxed text-text font-medium ${mobile ? "text-[15px]" : "text-[15px] sm:text-[17px]"}`}>{result.text}</p>
+      </blockquote>
+
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="border border-line rounded-lg p-3.5">
+          <div className="eyebrow mb-1.5">confidence</div>
+          <div className="flex items-baseline gap-1">
+            <span className="mono text-2xl sm:text-3xl font-semibold text-text tracking-tight"><Counter value={result.confidence} /></span>
+            <span className="mono text-sm text-faint">%</span>
+          </div>
+          <div className="bar-track h-1 mt-2.5 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }} animate={{ width: `${result.confidence}%` }}
+              transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+              className="h-full rounded-full" style={{ background: RISK_COLOR[risk] }}
+            />
+          </div>
+        </div>
+
+        <div className="border border-line rounded-lg p-3.5">
+          <div className="eyebrow mb-1.5">virality</div>
+          <div className="flex items-baseline gap-1">
+            <span className="mono text-2xl sm:text-3xl font-semibold text-text tracking-tight">{result.virality_score}</span>
+            <span className="mono text-sm text-faint">/10</span>
+          </div>
+          <div className="bar-track h-1 mt-2.5 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }} animate={{ width: `${Math.min(result.virality_score * 10, 100)}%` }}
+              transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
+              className="h-full rounded-full bg-signal"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <div className="eyebrow mb-2">rationale</div>
+        <p className="text-[13.5px] leading-relaxed text-dim">{result.explanation}</p>
+      </div>
+
+      <div className="flex items-center justify-between pt-4 border-t border-line">
+        <span className="mono text-[11px] text-faint">logged {fmtTime(result.timestamp)}</span>
+        <span className="mono text-[11px] text-dim flex items-center gap-1">
+          src {result.source} <ArrowUpRight className="w-3 h-3 text-faint" />
+        </span>
+      </div>
+    </motion.article>
+  );
+}
+
+/* ── Distribution panel ────────────────────────────────────────────────────── */
+function DistributionPanel({ distribution }: { distribution: { counts: Record<RiskLevel, number>; total: number; percents: Record<RiskLevel, number> } }) {
+  return (
+    <div className="panel p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="eyebrow flex items-center gap-1.5">
+          <span className="w-1 h-1 rounded-full bg-signal" />
+          risk distribution
+        </h3>
+        <span className="mono text-[10px] text-faint">{distribution.total} claims</span>
+      </div>
+
+      <div className="flex h-2 rounded-full overflow-hidden bar-track">
+        {(["high", "mod", "low"] as RiskLevel[]).map(level => (
+          distribution.counts[level] > 0 && (
+            <motion.div
+              key={level}
+              initial={{ width: 0 }} animate={{ width: `${distribution.percents[level]}%` }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+              style={{ background: RISK_COLOR[level] }}
+            />
+          )
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mt-3.5">
+        {([
+          { level: "high" as RiskLevel, label: "high risk" },
+          { level: "mod" as RiskLevel, label: "moderate" },
+          { level: "low" as RiskLevel, label: "low risk" },
+        ]).map(({ level, label }) => (
+          <div key={level} className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <span className="risk-dot" style={{ background: RISK_COLOR[level] }} />
+              <span className="text-[11px] text-dim">{label}</span>
+            </div>
+            <span className="mono text-[15px] font-semibold text-text">{distribution.counts[level]}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Animated number ───────────────────────────────────────────────────────── */
 function Counter({ value }: { value: number }) {
   const [displayValue, setDisplayValue] = useState(0);
-  
+
   useEffect(() => {
     const start = displayValue;
     const end = value;
     if (start === end) return;
-    
-    const duration = 1000;
+
+    const duration = 700;
     const startTime = performance.now();
-    
-    // cubic-bezier(0.4, 0, 0.2, 1) approximation for JS
     const easeOutQuart = (x: number): number => 1 - Math.pow(1 - x, 4);
-    
+
     const animate = (currentTime: number) => {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      const ease = easeOutQuart(progress);
-      
-      setDisplayValue(Number((start + (end - start) * ease).toFixed(1)));
-      
+      setDisplayValue(Number((start + (end - start) * easeOutQuart(progress)).toFixed(1)));
       if (progress < 1) requestAnimationFrame(animate);
-      else setDisplayValue(end);
+      else setDisplayValue(value);
     };
-    
+
     requestAnimationFrame(animate);
   }, [value, displayValue]);
-  
+
   return <>{displayValue}</>;
 }

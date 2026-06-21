@@ -9,7 +9,7 @@ import { NextResponse } from 'next/server';
  * - Uses keepalive + a generous timeout to tolerate the backend's first (cold) call.
  */
 
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.BACKEND_URL || "https://cybersoul18-truthlens-backend.hf.space";
 
 const TTL_MS = 5_000;
 let cache: { at: number; data: unknown } | null = null;

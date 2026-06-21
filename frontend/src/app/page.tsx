@@ -23,7 +23,7 @@ type Theme = "dark" | "light";
 
 /* ── Constants ─────────────────────────────────────────────────────────────── */
 const REST_URL = "/api/results";                                   // proxied → local backend
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "wss://cybersoul18-truthlens-backend.hf.space/ws";
 
 const CATEGORIES: Record<string, string[]> = {
   Economy: ["economy", "market", "stock", "inflation", "bank", "finance", "trade", "price", "cost", "wage"],
